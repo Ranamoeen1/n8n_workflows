@@ -1,0 +1,600 @@
+{
+  "name": "Daily Gmail Email Categorization and Spam Filtering",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "8d5a77cb-8125-49ed-ae96-befeac8c4848",
+      "name": "Daily Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -624,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "maxEmails",
+              "value": 5,
+              "type": "number"
+            },
+            {
+              "id": "id-2",
+              "name": "spamLabel",
+              "value": "Spam",
+              "type": "string"
+            },
+            {
+              "id": "id-3",
+              "name": "jobLabel",
+              "value": "Job Related",
+              "type": "string"
+            },
+            {
+              "id": "id-4",
+              "name": "educationalLabel",
+              "value": "Educational",
+              "type": "string"
+            },
+            {
+              "id": "id-5",
+              "name": "yourEmail",
+              "value": "<__PLACEHOLDER_VALUE__Your Gmail address__>",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "e3056c5f-e04c-4760-a018-fd845b83557a",
+      "name": "Workflow Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -400,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "limit": "={{ $('Workflow Configuration').first().json.maxEmails }}",
+        "filters": {
+          "readStatus": "unread"
+        }
+      },
+      "id": "eff70556-47f8-4966-87f3-7953f87c0d49",
+      "name": "Get Unread Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -176,
+        624
+      ],
+      "webhookId": "dd85f30e-d993-4bff-ab3b-9dc6bd4d682a",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "NdVeYLET8nTmrPry",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze this email and categorize it:\n\nFrom: {{ $json.From }}\nSubject: {{ $json.Subject }}\nBody: {{ $json.snippet }}\n\nEmail ID: {{ $json.id }}\n\nIMPORTANT: Include the From and Subject in your response for reporting purposes.",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are an email categorization assistant. Your task is to analyze emails and categorize them into one of three categories:\n\n1. SPAM - Unsolicited promotional emails, phishing attempts, suspicious content, or irrelevant messages\n2. job - Job offers, recruitment emails, career opportunities, interview invitations, or professional networking\n3. educational - Course materials, learning resources, academic content, training programs, or educational newsletters\n\nAnalyze the email content carefully and return:\n- category: one of spam, job, or educational\n- emailId: the email ID provided\n- confidence: your confidence level (0-1)\n- from: the sender email address\n- subject: the email subject line\n\nIf you need to add labels to emails, use the Gmail Tool to apply the appropriate label."
+        }
+      },
+      "id": "5f4cce14-86e0-4680-9dfd-50fdc75e6010",
+      "name": "Email Categorization Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        48,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-4-5-20250929",
+          "cachedResultName": "Claude Sonnet 4.5"
+        },
+        "options": {}
+      },
+      "id": "966ddd43-edf5-4ed5-9f65-03d288a1aaed",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        -624,
+        1264
+      ]
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n\t\"type\": \"object\",\n\t\"properties\": {\n\t\t\"category\": {\n\t\t\t\"type\": \"string\",\n\t\t\t\"enum\": [\"spam\", \"job\", \"educational\"]\n\t\t},\n\t\t\"emailId\": {\n\t\t\t\"type\": \"string\"\n\t\t},\n\t\t\"confidence\": {\n\t\t\t\"type\": \"number\"\n\t\t},\n\t\t\"from\": {\n\t\t\t\"type\": \"string\"\n\t\t},\n\t\t\"subject\": {\n\t\t\t\"type\": \"string\"\n\t\t}\n\t},\n\t\"required\": [\"category\", \"emailId\", \"confidence\", \"from\", \"subject\"]\n}",
+        "autoFix": true
+      },
+      "id": "9898ae68-891e-4d25-88f4-f6834bf287fa",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        320,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $fromAI('emailId', 'The email ID to label', 'string') }}",
+        "labelIds": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Label_Names_or_IDs', `The label to apply`, 'string') }}"
+      },
+      "id": "857e4314-c26d-4ebd-a469-5f07b4c3c4e8",
+      "name": "Gmail Tool",
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.2,
+      "position": [
+        120,
+        848
+      ],
+      "webhookId": "d9faee47-0ea6-4a6e-9025-da95c88b2867",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "NdVeYLET8nTmrPry",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.category }}",
+                    "rightValue": "spam",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Spam"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.category }}",
+                    "rightValue": "job",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Job"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.category }}",
+                    "rightValue": "educational",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Educational"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2cdb5e5-1257-4087-a16d-2c10a3c3d3ee",
+      "name": "Route by Category",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        616,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $json.output.emailId }}",
+        "labelIds": [
+          "SPAM"
+        ]
+      },
+      "id": "724a8f7e-f8c0-4197-b87b-21a6b64897ad",
+      "name": "Label as Spam",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        816
+      ],
+      "webhookId": "2f75b35e-99f1-4658-9a7b-bafed25ee81c",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "NdVeYLET8nTmrPry",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $json.output.emailId }}",
+        "labelIds": [
+          "SPAM"
+        ]
+      },
+      "id": "db697c57-e60f-4ada-8607-88cb9be05188",
+      "name": "Label as Job Related",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        432
+      ],
+      "webhookId": "d513a6c7-13f1-47aa-85a6-75d20df7fd48",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "NdVeYLET8nTmrPry",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $json.output.emailId }}",
+        "labelIds": [
+          "SPAM"
+        ]
+      },
+      "id": "0d710e39-9fb9-43b9-bbb4-bc78cc6da0ba",
+      "name": "Label as Educational",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        624
+      ],
+      "webhookId": "b2eb74b6-a83b-45a2-9719-33e0c9162dae",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "NdVeYLET8nTmrPry",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -304,
+        848
+      ],
+      "id": "fa54deaf-d36f-4aea-9e08-0b739b373969",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "P21zGkV7hpXMIciA",
+          "name": "Google Gemini(PaLM) Api account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        992
+      ],
+      "id": "bea51284-a942-4dc6-84ef-d5898ef216d1",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "mMS6dyCghpgkC0R9",
+          "name": "Groq account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "1d887547-d48e-4e4f-b4cf-b2b7c935a6ae",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        1064,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "=ranamoeenodeen@gmail.com",
+        "subject": "=Daily Email Categorization Summary - {{ $now.format('MMMM d, yyyy') }}",
+        "message": "=<h2>📧 Daily Email Categorization Report</h2>\n<p><strong>Date:</strong> {{ $now.format(\"MMMM d, yyyy\") }}</p>\n<p><strong>Time:</strong> {{ $now.format(\"h:mm a\") }}</p>\n\n<h3>📊 Summary:</h3>\n<ul>\n<li><strong>Total Emails Processed:</strong> {{ $('Route by Category').all().length }}</li>\n<li><strong>🚫 Spam:</strong> {{ $('Route by Category').all().filter(item => item.json.output.category === \"spam\").length }}</li>\n<li><strong>💼 Job Related:</strong> {{ $('Route by Category').all().filter(item => item.json.output.category === \"job\").length }}</li>\n<li><strong>📚 Educational:</strong> {{ $('Route by Category').all().filter(item => item.json.output.category === \"educational\").length }}</li>\n</ul>\n\n<h3>📋 Detailed Results:</h3>\n<table border=\"1\" cellpadding=\"8\" cellspacing=\"0\" style=\"border-collapse: collapse; width: 100%;\">\n<tr style=\"background-color: #f2f2f2;\">\n<th>From</th>\n<th>Subject</th>\n<th>Category</th>\n<th>Confidence</th>\n</tr>\n{{ $('Route by Category').all().map(item => `<tr>\n<td>${item.json.output.from || \"N/A\"}</td>\n<td>${item.json.output.subject || \"N/A\"}</td>\n<td>${item.json.output.category}</td>\n<td>${(item.json.output.confidence * 100).toFixed(0)}%</td>\n</tr>`).join(\"\") }}\n</table>\n\n<p style=\"margin-top: 20px;\"><em>All emails have been automatically labeled in your Gmail account.</em></p>",
+        "options": {}
+      },
+      "id": "ef1c6ba5-f0ca-4652-a0bd-340b98c7da37",
+      "name": "Send Summary Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1288,
+        624
+      ],
+      "webhookId": "ed9057d9-1dc5-4ae7-81e7-73bf6a590a20",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "NdVeYLET8nTmrPry",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -512,
+        928
+      ],
+      "id": "576c170e-e20c-4e49-bb02-76a906649b37",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "FEUroV3in0YoS63p",
+          "name": "OpenAi account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily Schedule": {
+      "main": [
+        [
+          {
+            "node": "Workflow Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Configuration": {
+      "main": [
+        [
+          {
+            "node": "Get Unread Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Unread Emails": {
+      "main": [
+        [
+          {
+            "node": "Email Categorization Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Email Categorization Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Email Categorization Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Categorization Agent": {
+      "main": [
+        [
+          {
+            "node": "Route by Category",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Category": {
+      "main": [
+        [
+          {
+            "node": "Label as Spam",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Label as Job Related",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Label as Educational",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Email Categorization Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Structured Output Parser",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "Send Summary Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Label as Job Related": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Label as Educational": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Label as Spam": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        []
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1b7073cb-c24d-4e91-a745-ebfb8369e615",
+  "meta": {
+    "instanceId": "acc06413b3ec50ffc139a24de182e571da5fd4c2266386c1c7084f11b138ff50"
+  },
+  "id": "B9enN4vr8tn5gXge",
+  "tags": []
+}
