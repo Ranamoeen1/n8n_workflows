@@ -1,0 +1,665 @@
+{
+  "name": "Odoo Partner Outreach — Draft Emails",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Find Odoo Partners",
+        "formDescription": "Enter a country to find all Odoo partners there and draft outreach emails to them.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Country",
+              "placeholder": "e.g. Germany",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "78e34eb2-c9e3-46ce-a5d4-79b3bae7756e",
+      "name": "Target Country Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        112
+      ],
+      "webhookId": "5a3ad62a-c3dc-42d4-859d-0b5b6f4a02b2"
+    },
+    {
+      "parameters": {
+        "url": "https://www.odoo.com/partners",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "67aa219f-9113-4eef-ab42-5df956d54079",
+      "name": "Get Country Index",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        272,
+        224
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = String($json.data || '');\nconst wanted = String($('Target Country Form').first().json.Country || '').trim().toLowerCase();\nif (!wanted) { throw new Error('No country provided in the form.'); }\nconst re = /href=\"(\\/partners\\/country\\/([a-z0-9-]+-\\d+))\"[^>]*>([\\s\\S]*?)<\\/a>/gi;\nconst lev = (a, b) => {\n  const la = a.length; const lb = b.length;\n  if (!la) { return lb; }\n  if (!lb) { return la; }\n  const d = [];\n  for (let i = 0; i <= la; i++) { d[i] = [i]; }\n  for (let j = 0; j <= lb; j++) { d[0][j] = j; }\n  for (let i = 1; i <= la; i++) {\n    for (let j = 1; j <= lb; j++) {\n      const cost = a[i - 1] === b[j - 1] ? 0 : 1;\n      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);\n    }\n  }\n  return d[la][lb];\n};\nlet m; const seen = {}; const candidates = [];\nwhile ((m = re.exec(html)) !== null) {\n  const text = m[3].replace(/<[^>]*>/g, ' ').replace(/[0-9]/g, ' ').replace(/\\s+/g, ' ').trim().toLowerCase();\n  if (!text || seen[text]) { continue; }\n  seen[text] = true;\n  candidates.push({ text, slug: m[2], path: m[1] });\n}\nlet found = null; let partial = null; let fuzzy = null; let fuzzyDist = Infinity;\nfor (const c of candidates) {\n  if (c.text === wanted) { found = c; break; }\n  if (!partial && (c.text.indexOf(wanted) !== -1 || wanted.indexOf(c.text) !== -1)) { partial = c; }\n  const dist = lev(c.text, wanted);\n  if (dist < fuzzyDist) { fuzzyDist = dist; fuzzy = c; }\n}\nconst threshold = Math.max(2, Math.floor(wanted.length * 0.34));\nconst pick = found || partial || (fuzzy && fuzzyDist <= threshold ? fuzzy : null);\nif (!pick) { throw new Error('Country not found in the Odoo partner directory: ' + wanted + '. Please check the spelling.'); }\nreturn [{ json: { country: pick.text, inputCountry: wanted, slug: pick.slug, baseUrl: 'https://www.odoo.com/partners/country/' + pick.slug } }];"
+      },
+      "id": "ff9097c2-1802-4e6f-abfe-f7b4982d4a85",
+      "name": "Resolve Country Slug",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.baseUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "fb00d7a2-0bfc-4721-9553-5826008c0bc5",
+      "name": "Get Page 1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        784,
+        -176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = String($json.data || '');\nconst base = String($('Resolve Country Slug').first().json.baseUrl);\nlet total = 0;\nconst tm = html.match(/'grade_id_count':\\s*(\\d+),\\s*'grade_id':\\s*\\(0,/);\nif (tm) { total = parseInt(tm[1], 10); }\nconst linkRe = /\\/partners\\/([a-z0-9][a-z0-9-]*-\\d+)/g;\nconst set = new Set();\nlet lm;\nwhile ((lm = linkRe.exec(html)) !== null) { set.add(lm[1]); }\nconst perPage = set.size;\nlet pages = 1;\nif (perPage > 0 && total > perPage) { pages = Math.ceil(total / perPage); }\nif (pages > 500) { pages = 500; }\nconst out = [];\nfor (let i = 1; i <= pages; i++) {\n  out.push({ json: { page: i, pageUrl: i === 1 ? base : (base + '/page/' + i), total: total, perPage: perPage } });\n}\nreturn out;"
+      },
+      "id": "1afcfb79-ae1b-437c-8686-ddad10ce8d08",
+      "name": "Build Page List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        -176
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.pageUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 1200
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "37790829-d722-4e2f-bef7-47811eebb718",
+      "name": "Get Listing Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1232,
+        -176
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const origin = 'https://www.odoo.com';\nconst linkRe = /\\/partners\\/([a-z0-9][a-z0-9-]*-\\d+)/g;\nconst seen = new Set();\nconst out = [];\nfor (const item of $input.all()) {\n  const html = String(item.json.data || '');\n  let m;\n  while ((m = linkRe.exec(html)) !== null) {\n    const slug = m[1];\n    if (seen.has(slug)) { continue; }\n    seen.add(slug);\n    out.push({ json: { partnerSlug: slug, profileUrl: origin + '/partners/' + slug } });\n  }\n}\nreturn out;"
+      },
+      "id": "2bc2cc17-a302-4151-b10b-f2f93360efd2",
+      "name": "Extract Partner Links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1456,
+        -176
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.profileUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 1200
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "17855f6e-999e-49d2-99bc-917185b7e4b8",
+      "name": "Get Partner Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1104,
+        448
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const html = String($json.data || '');\nconst src = $('Extract Partner Links').item.json;\nlet name = '';\nconst t = html.match(/<title>([\\s\\S]*?)<\\/title>/i);\nif (t) { name = t[1].replace(/\\s*\\|\\s*Odoo\\s*$/i, '').replace(/\\s+/g, ' ').trim(); }\nif (!name) { name = String(src.partnerSlug || '').replace(/-\\d+$/, '').replace(/-/g, ' ').replace(/\\b\\w/g, function (c) { return c.toUpperCase(); }); }\nlet website = '';\nconst aRe = /href=\"(https?:\\/\\/[^\"\\x27]+)\"/gi;\nconst bad = ['odoo.com','facebook.com','twitter.com','x.com','linkedin.com','instagram.com','youtube.com','youtu.be','google.com','maps.goo','apps.odoo','cdn.','gstatic','googleapis','fontawesome','schema.org','w3.org','wa.me','t.me','tiktok.com'];\nlet a;\nwhile ((a = aRe.exec(html)) !== null) {\n  const url = a[1];\n  const low = url.toLowerCase();\n  if (bad.some(function (b) { return low.indexOf(b) !== -1; })) { continue; }\n  website = url.split('#')[0].split('?')[0];\n  break;\n}\nconst emailRe = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/g;\nconst emails = Array.from(new Set((html.match(emailRe) || []).filter(function (e) {\n  const l = e.toLowerCase();\n  return !/\\.(png|jpg|jpeg|gif|svg|webp)$/i.test(l) && l.indexOf('odoo.com') === -1 && l.indexOf('example.com') === -1 && l.indexOf('sentry') === -1;\n})));\nreturn { json: { profileUrl: src.profileUrl, partnerSlug: src.partnerSlug, name: name, website: website, emailsFromProfile: emails } };"
+      },
+      "id": "f9752f57-bf6f-45b8-8cf0-c07ef6bb58af",
+      "name": "Parse Profile",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.website }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 1200
+            }
+          },
+          "redirect": {
+            "redirect": {}
+          },
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "fc7573e3-47c3-4958-aba0-b38d7a477025",
+      "name": "Get Partner Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1552,
+        448
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const site = String($json.data || '');\nconst emailRe = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/g;\nconst siteEmails = (site.match(emailRe) || []).filter(function (e) {\n  return !/\\.(png|jpg|jpeg|gif|svg|webp|css|js)$/i.test(e);\n});\nconst prof = $('Parse Profile').item.json;\nconst merged = Array.from(new Set([].concat(prof.emailsFromProfile || [], siteEmails)))\n  .filter(function (e) {\n    const l = e.toLowerCase();\n    return l.indexOf('sentry') === -1 && l.indexOf('wixpress') === -1 && l.indexOf('example.com') === -1 && l.indexOf('.png') === -1;\n  })\n  .slice(0, 25);\nreturn { json: { profileUrl: prof.profileUrl, name: prof.name, website: prof.website, candidateEmails: merged } };"
+      },
+      "id": "7afa0602-664f-4d66-b350-82875d0146e6",
+      "name": "Collect Email Candidates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are extracting a contact email address for a B2B outreach campaign.\n\nCompany: {{ $json.name }}\nWebsite: {{ $json.website }}\nCandidate email addresses found on their Odoo profile and website:\n{{ $json.candidateEmails.join(', ') }}\n\nPick the SINGLE best general business contact email. Prefer addresses such as info@, contact@, sales@, hello@, office@, or any address on the company's own website domain. Avoid personal free-mail (gmail, yahoo, hotmail, outlook) unless nothing else is available. If the list is empty or none are usable, output exactly: NONE\n\nOutput ONLY the chosen email address, or the single word NONE. No other text.",
+        "batching": {}
+      },
+      "id": "469383da-fb0f-4215-ab63-8bf9198e52cf",
+      "name": "Pick Contact Email",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        2000,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = String($json.text || '').trim();\nconst m = raw.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/);\nconst email = m ? m[0] : '';\nconst p = $('Collect Email Candidates').item.json;\nreturn { json: { email: email, name: p.name, website: p.website, profileUrl: p.profileUrl } };"
+      },
+      "id": "ebd63803-0a0a-4596-9e40-27d2b0495172",
+      "name": "Set Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2352,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-at",
+              "leftValue": "={{ $json.email }}",
+              "rightValue": "@",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a4430798-2af1-48eb-8e54-63188798a6f1",
+      "name": "Has Email",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        2576,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are writing a short cold outreach email body from MRMtechsol to an Odoo partner company.\n\nRecipient company name: {{ $json.name }}\n\nUse the template below. Keep it almost identical: you may lightly adjust ONLY the greeting line and the first sentence so it naturally references that this company is an Odoo partner / implementer. Keep everything else, including the signature, exactly as written. Do not invent facts about the company. Output ONLY the final email body as plain text — no subject line, no markdown, no commentary.\n\nTEMPLATE:\nHello,\n\nI noticed that your company is currently expanding its Odoo implementation/development capabilities.\n\nWe are MRMtechsol, an Odoo technical consulting and development company. We can support your team remotely with custom module development, Python/XML/OWL development, API integrations, migrations, POS, Accounting, Inventory, HR/Payroll, reports and troubleshooting.\n\nInstead of committing immediately, you can give us a small technical task to evaluate our development quality and communication.\n\nIf the result meets your expectations, we can continue on an hourly, task-based or ongoing support model.\n\nRegards,\nMRMtechsol\ninfo@mrmtechsol.com",
+        "batching": {}
+      },
+      "id": "1b1cd737-19de-402f-ad55-372177361a4c",
+      "name": "Write Email Body",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        2992,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {
+          "temperature": 0.4
+        }
+      },
+      "id": "bf4f2fc9-a7d9-4d9d-8330-f6eeaa2f2115",
+      "name": "Gemini Draft Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        3072,
+        80
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "4mQTqL8xNnZ2MBJO",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "Odoo Technical Development Support – MRMtechsol",
+        "message": "={{ $json.text }}",
+        "options": {
+          "sendTo": "={{ $('Set Email').item.json.email }}"
+        }
+      },
+      "id": "c06e0a3b-7a98-447f-8ea8-d973119a31fb",
+      "name": "Create Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3344,
+        -144
+      ],
+      "webhookId": "26600cab-4312-4090-8dff-90f95ff9cc28",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "HF3UtyoFzt9CPMHi",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        1936,
+        656
+      ],
+      "id": "26f01b47-26e5-471c-8879-949a4d73d617",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "4mQTqL8xNnZ2MBJO",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Target Country Form": {
+      "main": [
+        [
+          {
+            "node": "Get Country Index",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Country Index": {
+      "main": [
+        [
+          {
+            "node": "Resolve Country Slug",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Country Slug": {
+      "main": [
+        [
+          {
+            "node": "Get Page 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Page 1": {
+      "main": [
+        [
+          {
+            "node": "Build Page List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Page List": {
+      "main": [
+        [
+          {
+            "node": "Get Listing Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Listing Page": {
+      "main": [
+        [
+          {
+            "node": "Extract Partner Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Partner Links": {
+      "main": [
+        [
+          {
+            "node": "Get Partner Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Partner Profile": {
+      "main": [
+        [
+          {
+            "node": "Parse Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Profile": {
+      "main": [
+        [
+          {
+            "node": "Get Partner Website",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Partner Website": {
+      "main": [
+        [
+          {
+            "node": "Collect Email Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Email Candidates": {
+      "main": [
+        [
+          {
+            "node": "Pick Contact Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Contact Email": {
+      "main": [
+        [
+          {
+            "node": "Set Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Email": {
+      "main": [
+        [
+          {
+            "node": "Has Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Email": {
+      "main": [
+        [
+          {
+            "node": "Write Email Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Email Body": {
+      "main": [
+        [
+          {
+            "node": "Create Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Draft Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Write Email Body",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Pick Contact Email",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "c96906c9-72cf-4cd8-bc0f-c4e5f94db38c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "cde5ff3fbe0f8a7d40e266aea553e1a747cc63a8c2e7989fd7d7914f81575ce9"
+  },
+  "nodeGroups": [
+    {
+      "id": "d785ebea-1a72-4b06-94eb-1cfccec2738f",
+      "name": "Resolve country",
+      "nodeIds": [
+        "67aa219f-9113-4eef-ab42-5df956d54079",
+        "ff9097c2-1802-4e6f-abfe-f7b4982d4a85"
+      ],
+      "description": "Looks up the country typed in the form and resolves its Odoo partner-directory URL."
+    },
+    {
+      "id": "3f6d0281-87a8-4259-bc43-17bf4a1087da",
+      "name": "List all partners",
+      "nodeIds": [
+        "fb00d7a2-0bfc-4721-9553-5826008c0bc5",
+        "1afcfb79-ae1b-437c-8686-ddad10ce8d08",
+        "37790829-d722-4e2f-bef7-47811eebb718",
+        "2bc2cc17-a302-4151-b10b-f2f93360efd2"
+      ],
+      "description": "Reads every directory page for that country and collects all partner profile links, with no cap."
+    },
+    {
+      "id": "75522e7b-c555-4a52-aa7b-90f2d1e6f58d",
+      "name": "Find partner emails",
+      "nodeIds": [
+        "17855f6e-999e-49d2-99bc-917185b7e4b8",
+        "f9752f57-bf6f-45b8-8cf0-c07ef6bb58af",
+        "fc7573e3-47c3-4958-aba0-b38d7a477025",
+        "7afa0602-664f-4d66-b350-82875d0146e6",
+        "469383da-fb0f-4215-ab63-8bf9198e52cf",
+        "ebd63803-0a0a-4596-9e40-27d2b0495172",
+        "a4430798-2af1-48eb-8e54-63188798a6f1",
+        "26f01b47-26e5-471c-8879-949a4d73d617"
+      ],
+      "description": "Opens each partner profile and website and uses Groq AI to pick the best contact email; skips partners with none."
+    },
+    {
+      "id": "d1930f4f-aa3f-44d3-bd1f-43d1ec8aaf02",
+      "name": "Draft outreach emails",
+      "nodeIds": [
+        "bf4f2fc9-a7d9-4d9d-8330-f6eeaa2f2115",
+        "1b1cd737-19de-402f-ad55-372177361a4c",
+        "c06e0a3b-7a98-447f-8ea8-d973119a31fb"
+      ],
+      "description": "Personalizes the MRMtechsol template per partner with Gemini and saves it as a Gmail draft to that partner."
+    }
+  ],
+  "id": "cu1d9spduAFGqnF0",
+  "tags": []
+}
